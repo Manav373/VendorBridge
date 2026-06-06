@@ -10,11 +10,12 @@ const { AppError } = require('../middleware/errorHandler');
  * Create a Purchase Order
  */
 const createPO = async (data, createdBy) => {
+  const poNumber = await generatePONumber(); // Generate outside transaction to avoid deadlocking pool
+  let createdPoId;
+
   const client = await getClient();
   try {
     await client.query('BEGIN');
-
-    const poNumber = await generatePONumber();
 
     // Calculate totals
     const items = data.items || [];
@@ -39,6 +40,7 @@ const createPO = async (data, createdBy) => {
     );
 
     const po = result.rows[0];
+    createdPoId = po.id;
 
     // Insert PO items
     for (let i = 0; i < items.length; i++) {
@@ -50,35 +52,36 @@ const createPO = async (data, createdBy) => {
     }
 
     await client.query('COMMIT');
-
-    await activityLogService.log({
-      userId: createdBy,
-      module: 'po',
-      action: 'PO_CREATED',
-      description: `Purchase Order created: ${poNumber}`,
-      entityType: 'po',
-      entityId: po.id,
-    });
-
-    const fullPO = await getPOById(po.id);
-
-    // Auto-send PO email to vendor if status is 'sent'
-    if ((data.status || 'draft') === 'sent' && fullPO.vendor_email) {
-      emailService.sendPOEmail({
-        vendorEmail: fullPO.vendor_email,
-        vendorName: fullPO.vendor_name,
-        po: fullPO,
-        items: fullPO.items,
-      }).catch(() => {});
-    }
-
-    return fullPO;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
   }
+
+  // Do these AFTER releasing the client to avoid deadlocking the connection pool
+  await activityLogService.log({
+    userId: createdBy,
+    module: 'po',
+    action: 'PO_CREATED',
+    description: `Purchase Order created: ${poNumber}`,
+    entityType: 'po',
+    entityId: createdPoId,
+  });
+
+  const fullPO = await getPOById(createdPoId);
+
+  // Auto-send PO email to vendor if status is 'sent'
+  if ((data.status || 'draft') === 'sent' && fullPO.vendor_email) {
+    emailService.sendPOEmail({
+      vendorEmail: fullPO.vendor_email,
+      vendorName: fullPO.vendor_name,
+      po: fullPO,
+      items: fullPO.items,
+    }).catch(() => {});
+  }
+
+  return fullPO;
 };
 
 /**

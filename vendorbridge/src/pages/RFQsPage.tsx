@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Eye, Send, FileText, Calendar, Users, ChevronRight, Lock, Mail } from 'lucide-react';
+import { Plus, Search, Eye, Send, FileText, Calendar, Users, ChevronRight, Lock, Mail, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { rfqService, type RFQ } from '../services/rfq.service';
 import { formatDate, formatCurrency, getStatusVariant } from '../utils';
@@ -61,11 +61,22 @@ export default function RFQsPage() {
   const handleCloseRFQ = async (rfq: RFQ) => {
     if (!window.confirm(`Close RFQ ${rfq.rfq_number}? All assigned vendors will be notified via email.`)) return;
     try {
-      await rfqService.updateRFQStatus(rfq.id, 'closed');
+      await rfqService.updateRFQStatus(rfq.id, 'completed');
       toast({ type: 'success', title: '🔒 RFQ Closed', description: `${rfq.rfq_number} closed. Vendor emails sent.` });
       loadRFQs();
     } catch {
       toast({ type: 'error', title: 'Error', description: 'Failed to close RFQ.' });
+    }
+  };
+
+  const handleDeleteRFQ = async (rfq: RFQ) => {
+    if (!window.confirm(`Delete RFQ ${rfq.rfq_number}? This cannot be undone.`)) return;
+    try {
+      await rfqService.deleteRFQ(rfq.id);
+      toast({ type: 'success', title: 'Deleted', description: `${rfq.rfq_number} has been deleted.` });
+      loadRFQs();
+    } catch {
+      toast({ type: 'error', title: 'Error', description: 'Failed to delete RFQ.' });
     }
   };
 
@@ -188,6 +199,17 @@ export default function RFQsPage() {
                         className="text-orange-400 hover:text-orange-300 border-orange-500/20 hover:bg-orange-500/10"
                       >
                         Close RFQ
+                      </Button>
+                    )}
+                    {(rfq.status === 'draft' || rfq.status === 'cancelled') && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                        onClick={() => handleDeleteRFQ(rfq)}
+                        className="text-red-400 hover:text-red-300 border-red-500/20 hover:bg-red-500/10"
+                      >
+                        Delete
                       </Button>
                     )}
                     <button

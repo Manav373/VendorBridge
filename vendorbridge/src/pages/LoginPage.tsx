@@ -3,9 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Eye, EyeOff, Zap, ArrowRight, Shield } from 'lucide-react';
+import { Eye, EyeOff, Zap, ArrowRight, Shield, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 
@@ -20,6 +21,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const { login, isLoading } = useAuth();
   const { toast } = useToast();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
   const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
@@ -39,6 +41,25 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex">
+      {/* Theme toggle — fixed top-right */}
+      <button
+        onClick={toggleTheme}
+        title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        className="fixed top-4 right-4 z-50 p-2.5 rounded-xl bg-card border border-border shadow-lg hover:shadow-xl hover:border-emerald-500/40 text-muted-foreground hover:text-foreground transition-all duration-300 group"
+      >
+        <div className="relative w-4 h-4 overflow-hidden">
+          <Sun
+            className={`absolute inset-0 w-4 h-4 transition-all duration-300 ${
+              theme === 'light' ? 'opacity-100 rotate-0 scale-100 text-amber-500' : 'opacity-0 rotate-90 scale-50'
+            }`}
+          />
+          <Moon
+            className={`absolute inset-0 w-4 h-4 transition-all duration-300 ${
+              theme === 'dark' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-50'
+            }`}
+          />
+        </div>
+      </button>
       {/* Left branding panel */}
       <div className="hidden lg:flex flex-col w-1/2 bg-gradient-to-br from-emerald-900/40 via-background to-background border-r border-border p-12 relative overflow-hidden">
         <div className="absolute inset-0 overflow-hidden">

@@ -1,4 +1,5 @@
-import { Bell, Search, Menu, ChevronDown, LogOut, Settings, User as UserIcon } from 'lucide-react';
+import { Bell, Search, Menu, ChevronDown, LogOut, Settings, User as UserIcon, Sun, Moon } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Breadcrumb } from '../ui/Breadcrumb';
@@ -11,6 +12,7 @@ interface NavbarProps {
 
 export function Navbar({ onMobileMenuOpen }: NavbarProps) {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [showNotifs, setShowNotifs] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
@@ -79,6 +81,26 @@ export function Navbar({ onMobileMenuOpen }: NavbarProps) {
             </div>
           )}
         </div>
+
+        {/* Theme Toggle */}
+        <button
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          className="p-2 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-all duration-300"
+        >
+          <div className="relative w-4 h-4 overflow-hidden">
+            <Sun
+              className={`absolute inset-0 w-4 h-4 transition-all duration-300 ${
+                theme === 'light' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 rotate-90 scale-50'
+              }`}
+            />
+            <Moon
+              className={`absolute inset-0 w-4 h-4 transition-all duration-300 ${
+                theme === 'dark' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-50'
+              }`}
+            />
+          </div>
+        </button>
 
         {/* Notifications */}
         <div className="relative" ref={notifsRef}>

@@ -10,11 +10,12 @@ const { AppError } = require('../middleware/errorHandler');
  * Create a new RFQ with items
  */
 const createRFQ = async (data, createdBy) => {
+  const rfqNumber = await generateRFQNumber(); // Generate outside transaction to avoid deadlocking pool
+  let createdRfqId;
+
   const client = await getClient();
   try {
     await client.query('BEGIN');
-
-    const rfqNumber = await generateRFQNumber();
 
     const rfqResult = await client.query(
       `INSERT INTO rfqs (rfq_number, title, description, category, status, priority, deadline, estimated_value, created_by, assigned_to, notes)
@@ -28,6 +29,7 @@ const createRFQ = async (data, createdBy) => {
     );
 
     const rfq = rfqResult.rows[0];
+    createdRfqId = rfq.id;
 
     // Insert line items
     if (data.items && data.items.length > 0) {
@@ -41,23 +43,24 @@ const createRFQ = async (data, createdBy) => {
     }
 
     await client.query('COMMIT');
-
-    await activityLogService.log({
-      userId: createdBy,
-      module: 'rfq',
-      action: 'RFQ_CREATED',
-      description: `RFQ created: ${rfq.rfq_number} - ${rfq.title}`,
-      entityType: 'rfq',
-      entityId: rfq.id,
-    });
-
-    return await getRFQById(rfq.id);
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
   }
+
+  // Do these AFTER releasing the client to avoid deadlocking the connection pool
+  await activityLogService.log({
+    userId: createdBy,
+    module: 'rfq',
+    action: 'RFQ_CREATED',
+    description: `RFQ created: ${rfqNumber} - ${data.title}`,
+    entityType: 'rfq',
+    entityId: createdRfqId,
+  });
+
+  return await getRFQById(createdRfqId);
 };
 
 /**
@@ -152,6 +155,7 @@ const getRFQById = async (rfqId) => {
  */
 const updateRFQ = async (rfqId, data, updatedBy) => {
   const client = await getClient();
+  let updatedRfqNumber = '';
   try {
     await client.query('BEGIN');
 
@@ -166,6 +170,7 @@ const updateRFQ = async (rfqId, data, updatedBy) => {
     );
 
     if (result.rows.length === 0) throw new AppError('RFQ not found', 404);
+    updatedRfqNumber = result.rows[0].rfq_number;
 
     // Update items if provided
     if (data.items) {
@@ -180,23 +185,24 @@ const updateRFQ = async (rfqId, data, updatedBy) => {
     }
 
     await client.query('COMMIT');
-
-    await activityLogService.log({
-      userId: updatedBy,
-      module: 'rfq',
-      action: 'RFQ_UPDATED',
-      description: `RFQ updated: ${result.rows[0].rfq_number}`,
-      entityType: 'rfq',
-      entityId: rfqId,
-    });
-
-    return await getRFQById(rfqId);
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
   }
+
+  // Do these AFTER releasing the client to avoid deadlocking the connection pool
+  await activityLogService.log({
+    userId: updatedBy,
+    module: 'rfq',
+    action: 'RFQ_UPDATED',
+    description: `RFQ updated: ${updatedRfqNumber}`,
+    entityType: 'rfq',
+    entityId: rfqId,
+  });
+
+  return await getRFQById(rfqId);
 };
 
 /**

@@ -131,13 +131,12 @@ export default function CreateRFQPage() {
         category: rfqData.category,
         deadline: rfqData.deadline,
         priority: rfqData.priority,
-        description: rfqData.description,
-        status: isDraft ? 'draft' : 'active',
+        description: rfqData.description || '',
         items: items
           .filter(i => i.name.trim() !== '')
           .map(i => ({
             name: i.name,
-            qty: i.qty,
+            quantity: i.qty,       // backend expects 'quantity', not 'qty'
             unit: i.unit,
             description: i.description || ''
           }))
@@ -158,10 +157,15 @@ export default function CreateRFQPage() {
       });
       navigate('/rfqs');
     } catch (err: any) {
+      let errorMsg = err?.message || 'Failed to create RFQ.';
+      if (err?.errors && Array.isArray(err.errors)) {
+        errorMsg += ': ' + err.errors.map((e: any) => e.message).join(', ');
+      }
+      
       toast({
         type: 'error',
-        title: 'Error',
-        description: err?.response?.data?.message ?? err?.message ?? 'Failed to create RFQ.',
+        title: 'Validation Error',
+        description: errorMsg,
       });
     } finally {
       setIsSubmitting(false);

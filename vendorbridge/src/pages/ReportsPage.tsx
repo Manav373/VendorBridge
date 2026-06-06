@@ -307,16 +307,16 @@ export default function ReportsPage() {
           <ResponsiveContainer width="100%" height={250}>
             <PieChart>
               <Pie
-                data={topVendors}
+                data={topVendors.filter((v: any) => v.spend > 0)}
                 cx="50%"
                 cy="50%"
-                outerRadius={100}
+                outerRadius={80}
                 dataKey="spend"
                 nameKey="vendor"
-                label={({ name, percent }) => `${name}: ${(Number(percent || 0) * 100).toFixed(0)}%`}
+                label={({ name, percent }) => (percent || 0) * 100 >= 1 ? `${name}: ${((percent || 0) * 100).toFixed(0)}%` : ''}
                 labelLine={{ stroke: '#4b5563' }}
               >
-                {topVendors.map((_, i) => (
+                {topVendors.filter((v: any) => v.spend > 0).map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
               </Pie>

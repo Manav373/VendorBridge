@@ -10,11 +10,12 @@ const { AppError } = require('../middleware/errorHandler');
  * Submit a quotation
  */
 const submitQuotation = async (data, vendorId, createdBy) => {
+  const quotationNumber = await generateQuotationNumber(); // Generate outside transaction to avoid deadlocking pool
+  let createdQuotationId;
+
   const client = await getClient();
   try {
     await client.query('BEGIN');
-
-    const quotationNumber = await generateQuotationNumber();
 
     // Calculate total
     const totalAmount = (data.items || []).reduce((sum, item) => {
@@ -33,6 +34,7 @@ const submitQuotation = async (data, vendorId, createdBy) => {
     );
 
     const quotation = result.rows[0];
+    createdQuotationId = quotation.id;
 
     // Insert items
     if (data.items && data.items.length > 0) {
@@ -53,48 +55,49 @@ const submitQuotation = async (data, vendorId, createdBy) => {
     );
 
     await client.query('COMMIT');
-
-    // Notify procurement team + send ack email to vendor
-    const rfqResult = await query('SELECT r.created_by, r.rfq_number FROM rfqs r WHERE r.id = $1', [data.rfqId]);
-    if (rfqResult.rows.length > 0) {
-      const rfq = rfqResult.rows[0];
-      await notificationService.createNotification({
-        userId: rfq.created_by,
-        type: 'quotation',
-        title: 'New Quotation Received',
-        message: `A new quotation ${quotationNumber} has been submitted for RFQ ${rfq.rfq_number}`,
-        entityId: quotation.id,
-        entityType: 'quotation',
-      });
-    }
-
-    // Send acknowledgement email to vendor (non-blocking)
-    const vendorResult = await query('SELECT v.email, v.name FROM vendors v WHERE v.id = $1', [vendorId]);
-    if (vendorResult.rows.length > 0) {
-      const fullQuotation = await getQuotationById(quotation.id);
-      emailService.sendQuotationReceivedEmail({
-        vendorEmail: vendorResult.rows[0].email,
-        vendorName: vendorResult.rows[0].name,
-        quotation: fullQuotation,
-      }).catch(() => {});
-    }
-
-    await activityLogService.log({
-      userId: createdBy,
-      module: 'quotation',
-      action: 'QUOTATION_SUBMITTED',
-      description: `Quotation ${quotationNumber} submitted for RFQ`,
-      entityType: 'quotation',
-      entityId: quotation.id,
-    });
-
-    return await getQuotationById(quotation.id);
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
   }
+
+  // Do these AFTER releasing the client to avoid deadlocking the connection pool
+  // Notify procurement team + send ack email to vendor
+  const rfqResult = await query('SELECT r.created_by, r.rfq_number FROM rfqs r WHERE r.id = $1', [data.rfqId]);
+  if (rfqResult.rows.length > 0) {
+    const rfq = rfqResult.rows[0];
+    await notificationService.createNotification({
+      userId: rfq.created_by,
+      type: 'quotation',
+      title: 'New Quotation Received',
+      message: `A new quotation ${quotationNumber} has been submitted for RFQ ${rfq.rfq_number}`,
+      entityId: createdQuotationId,
+      entityType: 'quotation',
+    });
+  }
+
+  // Send acknowledgement email to vendor (non-blocking)
+  const vendorResult = await query('SELECT v.email, v.name FROM vendors v WHERE v.id = $1', [vendorId]);
+  if (vendorResult.rows.length > 0) {
+    const fullQuotation = await getQuotationById(createdQuotationId);
+    emailService.sendQuotationReceivedEmail({
+      vendorEmail: vendorResult.rows[0].email,
+      vendorName: vendorResult.rows[0].name,
+      quotation: fullQuotation,
+    }).catch(() => {});
+  }
+
+  await activityLogService.log({
+    userId: createdBy,
+    module: 'quotation',
+    action: 'QUOTATION_SUBMITTED',
+    description: `Quotation ${quotationNumber} submitted for RFQ`,
+    entityType: 'quotation',
+    entityId: createdQuotationId,
+  });
+
+  return await getQuotationById(createdQuotationId);
 };
 
 /**

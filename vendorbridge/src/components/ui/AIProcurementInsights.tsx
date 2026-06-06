@@ -106,10 +106,12 @@ export function AIProcurementInsights() {
             const mappedTrends = trendList.map((t: any) => ({
               month: t.month,
               spend: Number(t.spend),
-              forecast: null
+              forecast: null as number | null
             }));
-            // Add a mock forecast based on average to keep UI alive
+            // Bridge: seed forecast from the last historical point so lines connect
             const avg = mappedTrends.reduce((acc, curr) => acc + curr.spend, 0) / mappedTrends.length;
+            const lastSpend = mappedTrends[mappedTrends.length - 1]?.spend ?? avg;
+            mappedTrends[mappedTrends.length - 1].forecast = lastSpend; // bridge point
             mappedTrends.push({ month: 'Next Month (F)', spend: null, forecast: Math.round(avg * 1.05) });
             mappedTrends.push({ month: 'Following (F)', spend: null, forecast: Math.round(avg * 1.1) });
             setSpendData(mappedTrends);
@@ -229,7 +231,7 @@ export function AIProcurementInsights() {
                 <AreaChart data={activeSpendData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="spendColor" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
                       <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="forecastColor" x1="0" y1="0" x2="0" y2="1">
@@ -237,13 +239,33 @@ export function AIProcurementInsights() {
                       <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="month" tick={{ fill: '#9ca3af', fontSize: 10 }} />
-                  <YAxis tick={{ fill: '#9ca3af', fontSize: 10 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v: any) => formatCurrency(v)} />
-                  <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-                  <Area name="Historical Spend" type="monotone" dataKey="spend" stroke="#10b981" strokeWidth={2.5} fill="url(#spendColor)" connectNulls />
-                  <Area name="AI Predicted Forecast" type="monotone" dataKey="forecast" stroke="#3b82f6" strokeWidth={2.5} strokeDasharray="5 5" fill="url(#forecastColor)" connectNulls />
+                  <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fill: 'currentColor', fontSize: 10, opacity: 0.6 }}
+                    axisLine={{ stroke: 'currentColor', strokeOpacity: 0.15 }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: 'currentColor', fontSize: 10, opacity: 0.6 }}
+                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    formatter={(v: any) => formatCurrency(v)}
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '10px',
+                      color: 'hsl(var(--foreground))',
+                      fontSize: 12,
+                    }}
+                    labelStyle={{ color: 'hsl(var(--muted-foreground))' }}
+                  />
+                  <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11, color: 'hsl(var(--foreground))' }} />
+                  <Area name="AI Predicted Forecast" type="monotone" dataKey="forecast" stroke="#3b82f6" strokeWidth={2} strokeDasharray="5 5" fill="url(#forecastColor)" connectNulls dot={false} />
+                  <Area name="Historical Spend" type="monotone" dataKey="spend" stroke="#10b981" strokeWidth={2.5} fill="url(#spendColor)" connectNulls dot={{ r: 3, fill: '#10b981' }} activeDot={{ r: 5 }} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
@@ -251,11 +273,20 @@ export function AIProcurementInsights() {
             {activeTab === 'performance' && (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={activeVendorPerformance} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 10 }} />
-                  <YAxis tick={{ fill: '#9ca3af', fontSize: 10 }} domain={[0, 100]} />
-                  <Tooltip />
-                  <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} />
+                  <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 10, opacity: 0.6 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: 'currentColor', fontSize: 10, opacity: 0.6 }} domain={[0, 100]} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '10px',
+                      color: 'hsl(var(--foreground))',
+                      fontSize: 12,
+                    }}
+                    labelStyle={{ color: 'hsl(var(--muted-foreground))' }}
+                  />
+                  <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, color: 'hsl(var(--foreground))' }} />
                   <Bar name="Delivery SLA %" dataKey="delivery" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                   <Bar name="Quality Score" dataKey="quality" fill="#10b981" radius={[4, 4, 0, 0]} />
                   <Bar name="Weighted AI Rating" dataKey="score" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
@@ -266,10 +297,20 @@ export function AIProcurementInsights() {
             {activeTab === 'approvals' && (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={approvalTimes} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 10 }} />
-                  <YAxis dataKey="role" type="category" tick={{ fill: '#9ca3af', fontSize: 10 }} width={90} />
-                  <Tooltip formatter={(v) => `${v} hours`} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} />
+                  <XAxis type="number" tick={{ fill: 'currentColor', fontSize: 10, opacity: 0.6 }} axisLine={false} tickLine={false} />
+                  <YAxis dataKey="role" type="category" tick={{ fill: 'currentColor', fontSize: 10, opacity: 0.6 }} width={90} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    formatter={(v) => `${v} hours`}
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '10px',
+                      color: 'hsl(var(--foreground))',
+                      fontSize: 12,
+                    }}
+                    labelStyle={{ color: 'hsl(var(--muted-foreground))' }}
+                  />
                   <Bar name="Average Cycle Duration (Hours)" dataKey="hours" fill="#f59e0b" radius={[0, 4, 4, 0]}>
                     {approvalTimes.map((_, index) => {
                       const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
