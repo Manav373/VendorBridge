@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Upload, ArrowLeft, ArrowRight, CheckCircle, Send, Save } from 'lucide-react';
+import { Plus, Trash2, Upload, ArrowLeft, ArrowRight, CheckCircle, Send, Save, Loader2 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, Select, Textarea } from '../components/ui/Input';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { useToast } from '../context/ToastContext';
 import { cn } from '../utils';
+import { rfqService } from '../services/rfq.service';
+import { vendorService, type Vendor } from '../services/vendor.service';
 
 interface LineItem {
   id: string;
@@ -21,14 +23,6 @@ const categories = [
   { value: 'Furniture', label: 'Furniture' },
   { value: 'Logistics', label: 'Logistics' },
   { value: 'Stationery', label: 'Stationery' },
-];
-
-const vendorOptions = [
-  { value: 'V001', label: 'Infra Supplies Pvt Ltd' },
-  { value: 'V002', label: 'TechCore Ltd' },
-  { value: 'V003', label: 'Panking Transport' },
-  { value: 'V006', label: 'Global Furniture Co' },
-  { value: 'V008', label: 'PrintMaster Delhi' },
 ];
 
 const steps = [
@@ -51,14 +45,32 @@ export default function CreateRFQPage() {
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
-
   const [items, setItems] = useState<LineItem[]>([
     { id: '1', name: '', qty: 1, unit: 'pcs', description: '' },
   ]);
 
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [isLoadingVendors, setIsLoadingVendors] = useState(false);
   const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const loadVendors = async () => {
+      setIsLoadingVendors(true);
+      try {
+        const res: any = await vendorService.getVendors({ limit: 100 });
+        const list = res?.data?.vendors ?? res?.vendors ?? [];
+        setVendors(list);
+      } catch (err) {
+        console.error('Failed to load vendors', err);
+      } finally {
+        setIsLoadingVendors(false);
+      }
+    };
+    loadVendors();
+  }, []);
 
   const validateStep1 = () => {
     const newErrors: Record<string, string> = {};
@@ -110,16 +122,54 @@ export default function CreateRFQPage() {
     setAttachments(prev => [...prev, ...files]);
   };
 
-  const handleSubmit = (isDraft: boolean) => {
-    toast({
-      type: 'success',
-      title: isDraft ? 'Draft Saved' : 'RFQ Created',
-      description: isDraft
-        ? 'Your RFQ has been saved as draft'
-        : 'RFQ has been sent to selected vendors',
-    });
-    navigate('/rfqs');
+  const handleSubmit = async (isDraft: boolean) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        title: rfqData.title,
+        category: rfqData.category,
+        deadline: rfqData.deadline,
+        priority: rfqData.priority,
+        description: rfqData.description,
+        status: isDraft ? 'draft' : 'active',
+        items: items
+          .filter(i => i.name.trim() !== '')
+          .map(i => ({
+            name: i.name,
+            qty: i.qty,
+            unit: i.unit,
+            description: i.description || ''
+          }))
+      };
+
+      const newRFQ = await rfqService.createRFQ(payload);
+
+      if (!isDraft && selectedVendors.length > 0) {
+        await rfqService.assignVendors(newRFQ.id, selectedVendors);
+      }
+
+      toast({
+        type: 'success',
+        title: isDraft ? 'Draft Saved' : 'RFQ Created',
+        description: isDraft
+          ? 'Your RFQ has been saved as draft'
+          : 'RFQ has been sent to selected vendors',
+      });
+      navigate('/rfqs');
+    } catch (err: any) {
+      toast({
+        type: 'error',
+        title: 'Error',
+        description: err?.response?.data?.message ?? err?.message ?? 'Failed to create RFQ.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  const matchedVendors = vendors.filter(v => v.category === rfqData.category && v.status === 'active');
+  const otherVendors = vendors.filter(v => v.category !== rfqData.category && v.status === 'active');
 
   return (
     <div className="space-y-6 animate-fade-in max-w-4xl">
@@ -291,7 +341,7 @@ export default function CreateRFQPage() {
                             className="input-field text-xs"
                             min="1"
                             value={item.qty}
-                            onChange={e => updateItem(item.id, 'qty', parseInt(e.target.value))}
+                            onChange={e => updateItem(item.id, 'qty', parseInt(e.target.value) || 1)}
                           />
                         </td>
                         <td className="py-2 px-3">
@@ -329,28 +379,77 @@ export default function CreateRFQPage() {
               <p className="text-xs text-muted-foreground">Choose vendors to receive this RFQ</p>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {vendorOptions.map(v => (
-                  <div
-                    key={v.value}
-                    onClick={() => toggleVendor(v.value)}
-                    className={cn(
-                      'flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all',
-                      selectedVendors.includes(v.value)
-                        ? 'border-emerald-500 bg-emerald-500/10'
-                        : 'border-border hover:border-emerald-500/30'
-                    )}
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-xs font-bold text-foreground">
-                      {v.label[0]}
+              {isLoadingVendors ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
+                </div>
+              ) : vendors.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No active vendors found in database.</p>
+              ) : (
+                <div className="space-y-4">
+                  {matchedVendors.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Recommended ({rfqData.category})</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {matchedVendors.map(v => (
+                          <div
+                            key={v.id}
+                            onClick={() => toggleVendor(v.id)}
+                            className={cn(
+                              'flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all',
+                              selectedVendors.includes(v.id)
+                                ? 'border-emerald-500 bg-emerald-500/10'
+                                : 'border-border hover:border-emerald-500/30'
+                            )}
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-xs font-bold text-emerald-400 shrink-0">
+                              {v.name[0]}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="text-sm font-semibold truncate block">{v.name}</span>
+                              <span className="text-[10px] text-muted-foreground">{v.email}</span>
+                            </div>
+                            {selectedVendors.includes(v.id) && (
+                              <CheckCircle className="w-4.5 h-4.5 text-emerald-400 shrink-0 ml-auto" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <span className="text-sm font-medium">{v.label}</span>
-                    {selectedVendors.includes(v.value) && (
-                      <CheckCircle className="w-4 h-4 text-emerald-400 ml-auto" />
-                    )}
-                  </div>
-                ))}
-              </div>
+                  )}
+
+                  {otherVendors.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Other Active Vendors</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {otherVendors.map(v => (
+                          <div
+                            key={v.id}
+                            onClick={() => toggleVendor(v.id)}
+                            className={cn(
+                              'flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all',
+                              selectedVendors.includes(v.id)
+                                ? 'border-emerald-500 bg-emerald-500/10'
+                                : 'border-border hover:border-emerald-500/30'
+                            )}
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-xs font-bold text-foreground shrink-0">
+                              {v.name[0]}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="text-sm font-medium truncate block">{v.name}</span>
+                              <span className="text-[10px] text-muted-foreground">{v.category || 'General'}</span>
+                            </div>
+                            {selectedVendors.includes(v.id) && (
+                              <CheckCircle className="w-4.5 h-4.5 text-emerald-400 shrink-0 ml-auto" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               {selectedVendors.length > 0 && (
                 <p className="text-xs text-emerald-400 mt-3">{selectedVendors.length} vendor(s) selected</p>
               )}
@@ -400,11 +499,14 @@ export default function CreateRFQPage() {
               <div>
                 <p className="text-xs text-muted-foreground mb-2">Selected Vendors ({selectedVendors.length})</p>
                 <div className="flex flex-wrap gap-2">
-                  {selectedVendors.map(id => (
-                    <span key={id} className="px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-full text-xs">
-                      {vendorOptions.find(v => v.value === id)?.label}
-                    </span>
-                  ))}
+                  {selectedVendors.map(id => {
+                    const name = vendors.find(v => v.id === id)?.name || id;
+                    return (
+                      <span key={id} className="px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-full text-xs">
+                        {name}
+                      </span>
+                    );
+                  })}
                   {selectedVendors.length === 0 && <span className="text-xs text-muted-foreground">No vendors selected</span>}
                 </div>
               </div>
@@ -417,7 +519,7 @@ export default function CreateRFQPage() {
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
           {step > 1 && (
-            <Button variant="ghost" leftIcon={<ArrowLeft className="w-4 h-4" />} onClick={() => setStep(s => s - 1)}>
+            <Button variant="ghost" leftIcon={<ArrowLeft className="w-4 h-4" />} onClick={() => setStep(s => s - 1)} disabled={isSubmitting}>
               Back
             </Button>
           )}
@@ -425,8 +527,9 @@ export default function CreateRFQPage() {
         <div className="flex gap-2">
           <Button
             variant="secondary"
-            leftIcon={<Save className="w-4 h-4" />}
+            leftIcon={isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             onClick={() => handleSubmit(true)}
+            disabled={isSubmitting}
           >
             Save as Draft
           </Button>
@@ -435,7 +538,11 @@ export default function CreateRFQPage() {
               Next
             </Button>
           ) : (
-            <Button leftIcon={<Send className="w-4 h-4" />} onClick={() => handleSubmit(false)}>
+            <Button
+              leftIcon={isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              onClick={() => handleSubmit(false)}
+              disabled={isSubmitting}
+            >
               Send to Vendors
             </Button>
           )}

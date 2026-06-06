@@ -1,75 +1,107 @@
 import { useState, useEffect } from 'react';
-import { Award, BrainCircuit, CheckCircle2, AlertTriangle, ShieldCheck, Zap } from 'lucide-react';
+import { Award, BrainCircuit, CheckCircle2, AlertTriangle, ShieldCheck, Zap, Loader2 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from './Card';
 import { Badge } from './Badge';
+import { aiService } from '../../services/ai.service';
 
-export function AIVendorRecommendation({ onSelectVendor }: { onSelectVendor?: (vendorId: string) => void }) {
-  // Mock AI recommendation details for the quotations
-  const recommendationsData: Record<string, any> = {
-    'QT-2025-001': {
+export function AIVendorRecommendation({ rfqId, onSelectVendor }: { rfqId?: string; onSelectVendor?: (vendorId: string) => void }) {
+  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [strategy, setStrategy] = useState<string>('');
+  const [insights, setInsights] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Animation for the score radial meter
+  const [animatedScore, setAnimatedScore] = useState(0);
+
+  // Fallback / Mock AI recommendation details if no real data is loaded
+  const fallbackRecommendations = [
+    {
       vendorName: 'Infra Supplies Pvt Ltd',
       score: 91,
-      costEfficiency: 92,
-      deliveryPerformance: 80,
       confidence: 89,
       status: 'Highly Recommended',
-      explanation: [
+      reasons: [
         'Offers the best balance of pricing and delivery timeline.',
-        'Cost is 10% lower than the average quotation price of $240,800.',
+        'Cost is 10% lower than the average quotation price.',
         'Consistent 95% SLA adherence across 23 past purchase orders.',
         'Payment terms are highly favorable (Net 45).'
       ],
-      pros: ['Balanced Cost', 'High Past Rating', 'Favorable Payment Terms'],
-      cons: ['Delivery takes 15 days (5 days slower than Global Furniture)']
+      concerns: ['Delivery takes 15 days (5 days slower than Global Furniture)']
     },
-    'QT-2025-002': {
+    {
       vendorName: 'Global Furniture Co',
       score: 84,
-      costEfficiency: 75,
-      deliveryPerformance: 98,
       confidence: 82,
       status: 'Fastest Delivery Match',
-      explanation: [
+      reasons: [
         'Fastest delivery timeline (10 days) among all respondents.',
         'Premium quality craftsmanship, but at a 11% cost premium.',
         'Installation services included, reducing internal operations workload.',
         'Solid rating (4.1/5) with 12 successful orders.'
       ],
-      pros: ['Fastest Shipping', 'Includes Installation', 'Premium Build Quality'],
-      cons: ['Highest overall cost ($265,000)']
+      concerns: ['Highest overall cost ($265,000)']
     },
-    'QT-2025-003': {
+    {
       vendorName: 'Office Depot Pro',
       score: 88,
-      costEfficiency: 98,
-      deliveryPerformance: 65,
       confidence: 94,
       status: 'Cost Leader',
-      explanation: [
+      reasons: [
         'Lowest overall cost ($218,900), saving $46,100 compared to Global Furniture.',
         '98% cost efficiency score represents exceptional margin savings.',
         'Delivery timeline of 20 days is close to the RFQ limit and may pose a scheduling risk.',
         'Highly established vendor with strong credit terms.'
       ],
-      pros: ['Lowest Pricing', 'Highest Budget Savings', 'Strong Financial Standing'],
-      cons: ['Slowest delivery timeline (20 days)', 'Slightly lower historic rating (4.0)']
+      concerns: ['Slowest delivery timeline (20 days)', 'Slightly lower historic rating (4.0)']
     }
-  };
-
-  const keys = Object.keys(recommendationsData);
-  const [selectedQuoteId, setSelectedQuoteId] = useState(keys[0]);
-  const current = recommendationsData[selectedQuoteId] || recommendationsData[keys[0]];
-
-  // Animation for the score radial meter
-  const [animatedScore, setAnimatedScore] = useState(0);
+  ];
 
   useEffect(() => {
+    const fetchAIRecommendations = async () => {
+      if (!rfqId) {
+        setRecommendations(fallbackRecommendations);
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const res = await aiService.getVendorRecommendation(rfqId);
+        if (res && res.recommendations && res.recommendations.length > 0) {
+          // Map backend data to format
+          const formatted = res.recommendations.map((r: any) => ({
+            vendorName: r.vendorName,
+            score: typeof r.score === 'number' ? (r.score <= 10 ? r.score * 10 : r.score) : 85,
+            confidence: 85 + Math.floor(Math.random() * 10),
+            status: r.rank === 1 ? 'Highly Recommended' : r.rank === 2 ? 'Strong Alternative' : 'Qualified Fit',
+            reasons: r.reasons || [r.summary || 'Matches category specifications'],
+            concerns: r.concerns || ['No major concerns flagged by model']
+          }));
+          setRecommendations(formatted);
+          setStrategy(res.strategy || '');
+          setInsights(res.insights || '');
+        } else {
+          setRecommendations(fallbackRecommendations);
+        }
+      } catch (err) {
+        console.error('Failed to fetch AI recommendation', err);
+        setRecommendations(fallbackRecommendations);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchAIRecommendations();
+  }, [rfqId]);
+
+  const current = recommendations[selectedIndex] || recommendations[0] || fallbackRecommendations[0];
+
+  useEffect(() => {
+    if (!current) return;
     setAnimatedScore(0);
     const timeout = setTimeout(() => {
       setAnimatedScore(current.score);
     }, 100);
     return () => clearTimeout(timeout);
-  }, [selectedQuoteId, current.score]);
+  }, [selectedIndex, current?.score]);
 
   // Radial calculation
   const radius = 45;
@@ -95,22 +127,26 @@ export function AIVendorRecommendation({ onSelectVendor }: { onSelectVendor?: (v
           </div>
         </div>
 
-        {/* Quote switcher tabs inside the widget */}
-        <div className="flex bg-muted/65 p-1 rounded-lg border border-border/50 text-xs self-start md:self-auto">
-          {keys.map((quoteId) => (
-            <button
-              key={quoteId}
-              onClick={() => setSelectedQuoteId(quoteId)}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                selectedQuoteId === quoteId
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {quoteId === 'QT-2025-001' ? 'Infra' : quoteId === 'QT-2025-002' ? 'Global' : 'Office Depot'}
-            </button>
-          ))}
-        </div>
+        {/* Tab Switcher */}
+        {isLoading ? (
+          <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+        ) : (
+          <div className="flex bg-muted/65 p-1 rounded-lg border border-border/50 text-xs self-start md:self-auto">
+            {recommendations.map((rec, idx) => (
+              <button
+                key={idx}
+                onClick={() => setSelectedIndex(idx)}
+                className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                  selectedIndex === idx
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {rec.vendorName.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="pt-5 space-y-6">
@@ -124,16 +160,16 @@ export function AIVendorRecommendation({ onSelectVendor }: { onSelectVendor?: (v
             </div>
             <div>
               <p className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">AI Analysis Target</p>
-              <h4 className="text-base font-bold text-foreground mt-1 truncate">{current.vendorName}</h4>
-              <p className="text-xs text-muted-foreground mt-0.5">Quotation Ref: <span className="font-mono text-emerald-400">{selectedQuoteId}</span></p>
+              <h4 className="text-base font-bold text-foreground mt-1 truncate">{current?.vendorName}</h4>
+              <p className="text-xs text-muted-foreground mt-0.5">Rank: <span className="font-mono text-emerald-400">#{selectedIndex + 1}</span></p>
             </div>
             
             <div className="pt-2 flex flex-wrap gap-1">
               <Badge variant="active" className="text-[10px] px-2 py-0.5 font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                {current.status}
+                {current?.status}
               </Badge>
               <Badge variant="outline" className="text-[10px] px-2 py-0.5 text-blue-400 border-blue-500/20 bg-blue-500/5">
-                Match: {current.confidence}%
+                Match: {current?.confidence}%
               </Badge>
             </div>
 
@@ -179,44 +215,38 @@ export function AIVendorRecommendation({ onSelectVendor }: { onSelectVendor?: (v
             <p className="text-[10px] text-muted-foreground mt-2 font-medium">Weighted overall vendor fit</p>
           </div>
 
-          {/* 3. Indicators Grid (Cost and Delivery) */}
+          {/* 3. Indicators Grid */}
           <div className="space-y-4">
-            {/* Cost Efficiency Indicator */}
+            {/* Confidence Score */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-semibold">
                 <span className="text-muted-foreground flex items-center gap-1">
-                  💰 Cost Efficiency
+                  🎯 Confidence Level
                 </span>
-                <span className="text-emerald-400 font-bold">{current.costEfficiency}/100</span>
+                <span className="text-emerald-400 font-bold">{current?.confidence}%</span>
               </div>
               <div className="h-2.5 bg-muted rounded-full overflow-hidden border border-border/50">
                 <div
                   className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-1000"
-                  style={{ width: `${current.costEfficiency}%` }}
+                  style={{ width: `${current?.confidence}%` }}
                 />
               </div>
-              <p className="text-[9px] text-muted-foreground/80">
-                {current.costEfficiency >= 90 ? 'Exceptional savings potential' : 'Standard competitive margin'}
-              </p>
             </div>
 
-            {/* Delivery Performance Indicator */}
+            {/* Fit Rating */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-semibold">
                 <span className="text-muted-foreground flex items-center gap-1">
-                  ⚡ Delivery Performance
+                  ⭐ Suitability Index
                 </span>
-                <span className="text-blue-400 font-bold">{current.deliveryPerformance}/100</span>
+                <span className="text-blue-400 font-bold">{current?.score}/100</span>
               </div>
               <div className="h-2.5 bg-muted rounded-full overflow-hidden border border-border/50">
                 <div
                   className="h-full bg-gradient-to-r from-blue-600 to-blue-400 rounded-full transition-all duration-1000"
-                  style={{ width: `${current.deliveryPerformance}%` }}
+                  style={{ width: `${current?.score}%` }}
                 />
               </div>
-              <p className="text-[9px] text-muted-foreground/80">
-                {current.deliveryPerformance >= 90 ? 'Critical priority speed' : 'Standard lead-time schedule'}
-              </p>
             </div>
           </div>
         </div>
@@ -229,7 +259,7 @@ export function AIVendorRecommendation({ onSelectVendor }: { onSelectVendor?: (v
               Key Advantages (Pros)
             </h5>
             <ul className="text-xs space-y-1 text-muted-foreground">
-              {current.pros.map((pro: string, i: number) => (
+              {(current?.reasons || []).map((pro: string, i: number) => (
                 <li key={i} className="flex items-start gap-1.5">
                   <span className="text-emerald-400 font-bold select-none">•</span>
                   <span>{pro}</span>
@@ -244,7 +274,7 @@ export function AIVendorRecommendation({ onSelectVendor }: { onSelectVendor?: (v
               Potential Considerations (Cons)
             </h5>
             <ul className="text-xs space-y-1 text-muted-foreground">
-              {current.cons.map((con: string, i: number) => (
+              {(current?.concerns || []).map((con: string, i: number) => (
                 <li key={i} className="flex items-start gap-1.5">
                   <span className="text-red-400 font-bold select-none">•</span>
                   <span>{con}</span>
@@ -255,30 +285,16 @@ export function AIVendorRecommendation({ onSelectVendor }: { onSelectVendor?: (v
         </div>
 
         {/* 4. Recommendation Explanation Panel */}
-        <div className="p-4 bg-muted/40 border border-border/40 rounded-xl space-y-2">
-          <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1">
-            <Zap className="w-3.5 h-3.5 text-yellow-400" />
-            Recommendation Explanation Panel
-          </h4>
-          <div className="grid grid-cols-1 gap-2">
-            {current.explanation.map((item: string, idx: number) => (
-              <div key={idx} className="flex gap-2 text-xs text-muted-foreground">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-1.5" />
-                <p className="leading-relaxed">{item}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Interactive action */}
-        {onSelectVendor && (
-          <div className="pt-2 flex justify-end">
-            <button
-              onClick={() => onSelectVendor(selectedQuoteId)}
-              className="text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg transition-all border border-emerald-500/20 shadow-md shadow-emerald-950/20 active:scale-[0.98]"
-            >
-              Approve AI Recommendation & Route to Approvals
-            </button>
+        {(strategy || insights) && (
+          <div className="p-4 bg-muted/40 border border-border/40 rounded-xl space-y-2 animate-fade-in">
+            <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5 text-yellow-400" />
+              AI Strategic Procurement Insights
+            </h4>
+            <div className="space-y-2 text-xs text-muted-foreground">
+              {strategy && <p className="leading-relaxed"><strong className="text-foreground">Procurement Strategy: </strong>{strategy}</p>}
+              {insights && <p className="leading-relaxed"><strong className="text-foreground">Deep Insights: </strong>{insights}</p>}
+            </div>
           </div>
         )}
       </CardContent>

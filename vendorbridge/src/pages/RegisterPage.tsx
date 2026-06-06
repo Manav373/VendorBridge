@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Zap, Upload, ArrowRight, ArrowLeft, User, CheckCircle } from 'lucide-react';
+import { Zap, Upload, ArrowRight, ArrowLeft, User, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import { useAuth, type RegisterData } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { Button } from '../components/ui/Button';
@@ -16,7 +16,12 @@ const schema = z.object({
   phone: z.string().min(10, 'Valid phone number required'),
   country: z.string().min(1, 'Country is required'),
   role: z.string().min(1, 'Role is required'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string(),
   additionalInfo: z.string().optional(),
+}).refine(d => d.password === d.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword'],
 });
 
 const countries = [
@@ -29,17 +34,17 @@ const countries = [
 ];
 
 const roles = [
-  { value: 'procurement_manager', label: 'Procurement Manager' },
+  { value: 'manager', label: 'Procurement Manager' },
   { value: 'procurement_officer', label: 'Procurement Officer' },
-  { value: 'finance_manager', label: 'Finance Manager' },
   { value: 'vendor', label: 'Vendor / Supplier' },
-  { value: 'approver', label: 'Approver' },
   { value: 'admin', label: 'System Administrator' },
 ];
 
 export default function RegisterPage() {
   const [step, setStep] = useState(1);
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { register: registerUser, isLoading } = useAuth();
   const { toast } = useToast();
@@ -58,7 +63,7 @@ export default function RegisterPage() {
   const handleNext = async () => {
     const fields = step === 1
       ? ['firstName', 'lastName', 'email'] as const
-      : ['phone', 'country', 'role'] as const;
+      : ['phone', 'country', 'role', 'password', 'confirmPassword'] as const;
     const valid = await trigger(fields);
     if (valid) setStep(s => s + 1);
   };
@@ -175,11 +180,41 @@ export default function RegisterPage() {
                     error={errors.role?.message}
                   />
                 </div>
+
+                {/* Password fields */}
+                <div className="border-t border-border pt-5 space-y-4">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Create Password</p>
+                  <Input
+                    {...register('password')}
+                    label="Password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="At least 8 characters"
+                    error={errors.password?.message}
+                    rightIcon={
+                      <button type="button" onClick={() => setShowPassword(s => !s)}>
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    }
+                  />
+                  <Input
+                    {...register('confirmPassword')}
+                    label="Confirm Password"
+                    type={showConfirm ? 'text' : 'password'}
+                    placeholder="Repeat your password"
+                    error={errors.confirmPassword?.message}
+                    rightIcon={
+                      <button type="button" onClick={() => setShowConfirm(s => !s)}>
+                        {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    }
+                  />
+                </div>
+
                 <Textarea
                   {...register('additionalInfo')}
-                  label="Additional Information"
+                  label="Additional Information (Optional)"
                   placeholder="Tell us about your company, procurement volume, or specific requirements..."
-                  rows={4}
+                  rows={3}
                 />
               </div>
             )}

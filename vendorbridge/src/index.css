@@ -129,3 +129,48 @@
 .animate-fade-in {
   animation: animate-fade-in 0.3s ease-out both;
 }
+
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+  
+  html, body {
+    background-color: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide everything by default */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Show only the print area */
+  .print-area, .print-area * {
+    visibility: visible;
+  }
+  
+  /* Position the print area at the top left */
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background-color: white !important;
+    color: black !important;
+  }
+
+  /* Force backgrounds and borders for print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Override dark mode text colors in print */
+  .print-area .text-muted-foreground { color: #6b7280 !important; }
+  .print-area .text-foreground { color: #111827 !important; }
+  .print-area .border-border { border-color: #e5e7eb !important; }
+  .print-area .bg-muted { background-color: #f3f4f6 !important; }
+}

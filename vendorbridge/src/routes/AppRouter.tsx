@@ -4,6 +4,7 @@ import { AppLayout, AuthLayout } from '../layouts/AppLayout';
 // Pages
 import LoginPage from '../pages/LoginPage';
 import RegisterPage from '../pages/RegisterPage';
+import ForgotPasswordPage from '../pages/ForgotPasswordPage';
 import DashboardPage from '../pages/DashboardPage';
 import VendorsPage from '../pages/VendorsPage';
 import RFQsPage from '../pages/RFQsPage';
@@ -26,6 +27,7 @@ export function AppRouter() {
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         </Route>
 
         {/* Protected app routes */}

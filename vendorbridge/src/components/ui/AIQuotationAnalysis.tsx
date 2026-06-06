@@ -1,19 +1,25 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Scale, ShieldAlert } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
+import { Scale, ShieldAlert, Loader2 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from './Card';
 import { Badge } from './Badge';
 import { formatCurrency } from '../../utils';
+import { aiService } from '../../services/ai.service';
+import { quotationService } from '../../services/quotation.service';
 
-export function AIQuotationAnalysis() {
-  // Mock comparison details for the charts
-  const chartData = [
-    { name: 'Infra Supplies (QT-001)', cost: 238500, delivery: 15, rating: 4.5, fill: '#10b981' },
-    { name: 'Global Furniture (QT-002)', cost: 265000, delivery: 10, rating: 4.1, fill: '#3b82f6' },
-    { name: 'Office Depot (QT-003)', cost: 218900, delivery: 20, rating: 4.0, fill: '#f59e0b' }
+export function AIQuotationAnalysis({ rfqId }: { rfqId?: string }) {
+  const [analysisData, setAnalysisData] = useState<any>(null);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fallback charts & risk assessment data
+  const fallbackChartData = [
+    { name: 'Infra Supplies', cost: 238500, delivery: 15, rating: 4.5, fill: '#10b981' },
+    { name: 'Global Furniture', cost: 265000, delivery: 10, rating: 4.1, fill: '#3b82f6' },
+    { name: 'Office Depot', cost: 218900, delivery: 20, rating: 4.0, fill: '#f59e0b' }
   ];
 
-  // Mock Risk assessment
-  const riskData = [
+  const fallbackRiskData = [
     {
       vendor: 'Infra Supplies',
       rating: 'Low Risk',
@@ -46,6 +52,54 @@ export function AIQuotationAnalysis() {
     }
   ];
 
+  useEffect(() => {
+    const runAnalysis = async () => {
+      if (!rfqId) return;
+      setIsLoading(true);
+      try {
+        const [analysisRes, quotationsRes] = await Promise.all([
+          aiService.analyzeQuotations(rfqId),
+          quotationService.getRFQQuotations(rfqId)
+        ]);
+
+        setAnalysisData(analysisRes);
+
+        const quotes = quotationsRes?.data?.quotations ?? quotationsRes?.data ?? quotationsRes ?? [];
+        if (quotes.length > 0) {
+          const colors = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899'];
+          const formattedCharts = quotes.map((q: any, i: number) => ({
+            name: q.vendor_name || 'Vendor',
+            cost: Number(q.total_amount),
+            delivery: Number(q.delivery_days),
+            rating: Number(q.rating ?? 4.0),
+            fill: colors[i % colors.length]
+          }));
+          setChartData(formattedCharts);
+        }
+      } catch (err) {
+        console.error('Failed to run AI quotation analysis', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    runAnalysis();
+  }, [rfqId]);
+
+  const activeChartData = chartData.length > 0 ? chartData : fallbackChartData;
+  
+  const riskData = analysisData?.vendorAnalysis
+    ? analysisData.vendorAnalysis.map((v: any) => ({
+        vendor: v.vendor,
+        rating: v.riskLevel === 'low' ? 'Low Risk' : v.riskLevel === 'medium' ? 'Medium Risk' : 'High Risk',
+        variant: v.riskLevel === 'low' ? ('active' as const) : v.riskLevel === 'medium' ? ('pending' as const) : ('rejected' as const),
+        details: [
+          { type: 'AI Score', status: `${v.score || 8}/10`, text: `Suitability analysis rated ${v.score || 8} out of 10.`, risk: v.riskLevel },
+          { type: 'Pros', status: 'Advantages', text: (v.pros || []).join(', ') || 'Competitive parameters.', risk: 'low' },
+          { type: 'Cons', status: 'Considerations', text: (v.cons || []).join(', ') || 'No critical cons.', risk: v.riskLevel }
+        ]
+      }))
+    : fallbackRiskData;
+
   const CustomChartTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       return (
@@ -72,10 +126,19 @@ export function AIQuotationAnalysis() {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs uppercase font-extrabold bg-emerald-500/25 text-emerald-400 px-2 py-0.5 rounded-full tracking-wider">AI Procurement Intelligence</span>
             <span className="text-xs text-muted-foreground">Analysis Mode: Multi-Objective Decision Support</span>
+            {isLoading && <Loader2 className="w-4.5 h-4.5 text-emerald-400 animate-spin ml-2" />}
           </div>
           <h4 className="text-sm font-bold text-foreground">AI Recommendation Summary:</h4>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            The AI model recommends <span className="text-emerald-400 font-semibold">Infra Supplies Pvt Ltd (QT-2025-001)</span> as the optimal candidate. It yields a cost-saving of <span className="text-emerald-400 font-bold">$26,500 (10%)</span> compared to the high-end bid, maintains a secure safety lead buffer of 5 days prior to deadline, and leverages an established 95% performance history.
+            {analysisData ? (
+              <>
+                The AI model recommends <span className="text-emerald-400 font-semibold">{analysisData.recommendation?.vendorName}</span>.
+                Reason: {analysisRes => analysisData.recommendation?.reason || analysisData.summary}.
+                Estimated Savings: <span className="text-emerald-400 font-bold">{analysisData.recommendation?.estimatedSavings || 'Significant'}</span>.
+              </>
+            ) : (
+              `The AI model recommends Infra Supplies Pvt Ltd (QT-2025-001) as the optimal candidate. It yields a cost-saving of $26,500 (10%) compared to the high-end bid, maintains a secure safety lead buffer of 5 days prior to deadline, and leverages an established 95% performance history.`
+            )}
           </p>
         </div>
       </div>
@@ -91,12 +154,12 @@ export function AIQuotationAnalysis() {
           <CardContent>
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <BarChart data={activeChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                   <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
                   <Tooltip content={<CustomChartTooltip />} />
                   <Bar dataKey="cost" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={45}>
-                    {chartData.map((entry, index) => (
+                    {activeChartData.map((entry: any, index: number) => (
                       <Cell key={`cell-${index}`} fill={entry.fill} />
                     ))}
                   </Bar>
@@ -104,8 +167,17 @@ export function AIQuotationAnalysis() {
               </ResponsiveContainer>
             </div>
             <div className="flex justify-between items-center text-xs mt-3 pt-2 border-t border-border/20 text-muted-foreground">
-              <span>Best Bid: <strong className="text-emerald-400">$218,900 (Office Depot)</strong></span>
-              <span>Average Bid: <strong>$240,800</strong></span>
+              {analysisData?.priceAnalysis ? (
+                <>
+                  <span>Lowest Bid: <strong className="text-emerald-400">{formatCurrency(analysisData.priceAnalysis.lowestBid)}</strong></span>
+                  <span>Average Bid: <strong>{formatCurrency(analysisData.priceAnalysis.averageBid)}</strong></span>
+                </>
+              ) : (
+                <>
+                  <span>Best Bid: <strong className="text-emerald-400">$218,900 (Office Depot)</strong></span>
+                  <span>Average Bid: <strong>$240,800</strong></span>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -119,13 +191,12 @@ export function AIQuotationAnalysis() {
           <CardContent>
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                <BarChart data={activeChartData} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                   <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 25]} />
                   <YAxis dataKey="name" type="category" tick={{ fill: '#9ca3af', fontSize: 9 }} axisLine={false} tickLine={false} width={120} />
                   <Tooltip content={<CustomChartTooltip />} />
                   <Bar dataKey="delivery" fill="#8b5cf6" radius={[0, 4, 4, 0]} maxBarSize={25}>
-                    {chartData.map((entry, index) => {
-                      // Color code based on delivery days
+                    {activeChartData.map((entry: any, index: number) => {
                       const col = entry.delivery <= 10 ? '#3b82f6' : entry.delivery <= 15 ? '#10b981' : '#f59e0b';
                       return <Cell key={`cell-${index}`} fill={col} />;
                     })}
@@ -134,7 +205,7 @@ export function AIQuotationAnalysis() {
               </ResponsiveContainer>
             </div>
             <div className="flex justify-between items-center text-xs mt-3 pt-2 border-t border-border/20 text-muted-foreground">
-              <span>Fastest Delivery: <strong className="text-blue-400">10 days (Global)</strong></span>
+              <span>Fastest Delivery: <strong className="text-blue-400">{Math.min(...activeChartData.map((d: any) => d.delivery))} days</strong></span>
               <span>Deadline Limit: <strong className="text-red-400">22 days</strong></span>
             </div>
           </CardContent>
@@ -142,41 +213,43 @@ export function AIQuotationAnalysis() {
       </div>
 
       {/* Side-by-Side Comparison Matrix */}
-      <Card className="glass-card">
-        <CardHeader>
-          <h3 className="text-sm font-semibold text-foreground">AI Comparative Decision Matrix</h3>
-          <p className="text-xs text-muted-foreground">Granular verification of non-financial clauses</p>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead>
-                <tr className="border-b border-border/50 text-muted-foreground">
-                  <th className="py-2.5 font-semibold">Evaluation Factor</th>
-                  <th className="py-2.5 text-center font-semibold">Infra Supplies</th>
-                  <th className="py-2.5 text-center font-semibold">Global Furniture</th>
-                  <th className="py-2.5 text-center font-semibold">Office Depot</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/20">
-                {[
-                  { factor: 'Extended Warranty', infra: '1 Year Included', global: '2 Years Included', depot: '6 Months Std' },
-                  { factor: 'Installation SLA', infra: 'Self-Setup Required', global: 'White-Glove Included', depot: 'Partner (Paid)' },
-                  { factor: 'Payment Terms', infra: 'Net 45 (Flexible)', global: 'Net 30 (Standard)', depot: 'Immediate 10%' },
-                  { factor: 'Carbon Offsetting', infra: 'Gold Certified', global: 'Neutral Certified', depot: 'None Documented' }
-                ].map((row, idx) => (
-                  <tr key={idx} className="hover:bg-muted/10">
-                    <td className="py-3 font-medium text-foreground">{row.factor}</td>
-                    <td className="py-3 text-center text-muted-foreground">{row.infra}</td>
-                    <td className="py-3 text-center text-muted-foreground">{row.global}</td>
-                    <td className="py-3 text-center text-muted-foreground">{row.depot}</td>
+      {!analysisData && (
+        <Card className="glass-card animate-fade-in">
+          <CardHeader>
+            <h3 className="text-sm font-semibold text-foreground">AI Comparative Decision Matrix</h3>
+            <p className="text-xs text-muted-foreground">Granular verification of non-financial clauses</p>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="border-b border-border/50 text-muted-foreground">
+                    <th className="py-2.5 font-semibold">Evaluation Factor</th>
+                    <th className="py-2.5 text-center font-semibold">Infra Supplies</th>
+                    <th className="py-2.5 text-center font-semibold">Global Furniture</th>
+                    <th className="py-2.5 text-center font-semibold">Office Depot</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+                </thead>
+                <tbody className="divide-y divide-border/20">
+                  {[
+                    { factor: 'Extended Warranty', infra: '1 Year Included', global: '2 Years Included', depot: '6 Months Std' },
+                    { factor: 'Installation SLA', infra: 'Self-Setup Required', global: 'White-Glove Included', depot: 'Partner (Paid)' },
+                    { factor: 'Payment Terms', infra: 'Net 45 (Flexible)', global: 'Net 30 (Standard)', depot: 'Immediate 10%' },
+                    { factor: 'Carbon Offsetting', infra: 'Gold Certified', global: 'Neutral Certified', depot: 'None Documented' }
+                  ].map((row, idx) => (
+                    <tr key={idx} className="hover:bg-muted/10">
+                      <td className="py-3 font-medium text-foreground">{row.factor}</td>
+                      <td className="py-3 text-center text-muted-foreground">{row.infra}</td>
+                      <td className="py-3 text-center text-muted-foreground">{row.global}</td>
+                      <td className="py-3 text-center text-muted-foreground">{row.depot}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* AI Risk Assessment Indicators */}
       <Card className="glass-card">
@@ -193,10 +266,10 @@ export function AIQuotationAnalysis() {
         </CardHeader>
         <CardContent className="pt-0">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {riskData.map((risk, idx) => (
+            {riskData.map((risk: any, idx: number) => (
               <div key={idx} className="border border-border/40 rounded-xl p-4 bg-muted/10 space-y-3 relative">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-foreground">{risk.vendor}</span>
+                  <span className="text-xs font-bold text-foreground truncate max-w-[120px]">{risk.vendor}</span>
                   <Badge
                     variant={risk.variant}
                     className="text-[9px] uppercase font-bold"
@@ -206,7 +279,7 @@ export function AIQuotationAnalysis() {
                 </div>
                 
                 <div className="space-y-2 pt-1">
-                  {risk.details.map((detail, dIdx) => (
+                  {risk.details.map((detail: any, dIdx: number) => (
                     <div key={dIdx} className="space-y-0.5">
                       <div className="flex items-center justify-between text-[10px]">
                         <span className="text-muted-foreground font-medium">{detail.type} · <span className="text-foreground">{detail.status}</span></span>

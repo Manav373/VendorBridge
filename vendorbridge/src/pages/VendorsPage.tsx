@@ -1,81 +1,133 @@
-import { useState } from 'react';
-import { Search, Plus, Star, Phone, Mail, Globe, Edit, Trash2, Eye, Users } from 'lucide-react';
-import { mockVendors } from '../services/mockData';
+import { useState, useEffect, useCallback } from 'react';
+import { Search, Plus, Star, Phone, Mail, Globe, Edit, Trash2, Eye, Users, CheckCircle, XCircle, Ban } from 'lucide-react';
+import { vendorService, type Vendor } from '../services/vendor.service';
 import { formatCurrency, getStatusVariant } from '../utils';
 import { Card, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
-import { EmptyState } from '../components/ui/Loading';
+import { EmptyState, PageLoader } from '../components/ui/Loading';
 import { useToast } from '../context/ToastContext';
-
-type Vendor = typeof mockVendors[0];
-
-const categories = [
-  { value: '', label: 'All Categories' },
-  { value: 'IT Hardware', label: 'IT Hardware' },
-  { value: 'Software', label: 'Software' },
-  { value: 'Logistics', label: 'Logistics' },
-  { value: 'Stationery', label: 'Stationery' },
-  { value: 'Furniture', label: 'Furniture' },
-];
 
 const statusOptions = [
   { value: '', label: 'All Status' },
   { value: 'active', label: 'Active' },
   { value: 'pending', label: 'Pending' },
   { value: 'inactive', label: 'Inactive' },
+  { value: 'suspended', label: 'Suspended' },
 ];
 
 function StarRating({ rating }: { rating: number }) {
   return (
     <div className="flex items-center gap-1">
       {[1, 2, 3, 4, 5].map(s => (
-        <Star key={s} className={`w-3 h-3 ${s <= Math.floor(rating) ? 'text-yellow-400 fill-yellow-400' : 'text-muted-foreground'}`} />
+        <Star key={s} className={`w-3 h-3 ${s <= Math.floor(Number(rating)) ? 'text-yellow-400 fill-yellow-400' : 'text-muted-foreground'}`} />
       ))}
-      <span className="text-xs text-muted-foreground ml-1">{rating.toFixed(1)}</span>
+      <span className="text-xs text-muted-foreground ml-1">{Number(rating).toFixed(1)}</span>
     </div>
   );
 }
 
-function AddVendorModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+function VendorFormModal({ isOpen, onClose, onSaved, vendorToEdit }: { isOpen: boolean; onClose: () => void; onSaved: () => void; vendorToEdit?: Vendor | null }) {
   const { toast } = useToast();
-  const [form, setForm] = useState({ name: '', email: '', phone: '', category: '', country: '' });
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({
+    name: '', email: '', phone: '', category: '', country: '',
+    city: '', address: '', gstNumber: '', contactPerson: '',
+  });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (vendorToEdit) {
+      setForm({
+        name: vendorToEdit.name || '',
+        email: vendorToEdit.email || '',
+        phone: vendorToEdit.phone || '',
+        category: vendorToEdit.category || '',
+        country: vendorToEdit.country || '',
+        city: vendorToEdit.city || '',
+        address: vendorToEdit.address || '',
+        gstNumber: vendorToEdit.gst_number || '',
+        contactPerson: vendorToEdit.contact_person || '',
+      });
+    } else {
+      setForm({ name: '', email: '', phone: '', category: '', country: '', city: '', address: '', gstNumber: '', contactPerson: '' });
+    }
+  }, [vendorToEdit, isOpen]);
+
+  const categoryOptions = [
+    { value: 'Electronics', label: 'Electronics' },
+    { value: 'IT Hardware', label: 'IT Hardware' },
+    { value: 'Software', label: 'Software' },
+    { value: 'Logistics', label: 'Logistics' },
+    { value: 'Stationery', label: 'Stationery' },
+    { value: 'Furniture', label: 'Furniture' },
+    { value: 'IT Services', label: 'IT Services' },
+    { value: 'Printing', label: 'Printing' },
+  ];
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast({ type: 'success', title: 'Vendor added!', description: `${form.name} has been registered.` });
-    onClose();
+    if (!form.name || !form.email || !form.category) {
+      toast({ type: 'error', title: 'Missing fields', description: 'Name, email and category are required.' });
+      return;
+    }
+    setLoading(true);
+    try {
+      if (vendorToEdit) {
+        await vendorService.updateVendor(vendorToEdit.id, form);
+        toast({ type: 'success', title: 'Vendor Updated', description: `${form.name} has been updated.` });
+      } else {
+        await vendorService.createVendor(form);
+        toast({ type: 'success', title: 'Vendor Added!', description: `${form.name} has been registered.` });
+      }
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      toast({ type: 'error', title: vendorToEdit ? 'Update failed' : 'Failed to add vendor', description: err?.message ?? 'Please try again.' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add New Vendor" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={vendorToEdit ? "Edit Vendor" : "Add New Vendor"} size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input label="Vendor Name *" placeholder="Company Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
         <div className="grid grid-cols-2 gap-4">
-          <Input label="Email" placeholder="vendor@company.com" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-          <Input label="Phone" placeholder="+1 555 0123" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+          <Input label="Email *" placeholder="vendor@company.com" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
+          <Input label="Phone" placeholder="+91 9876543210" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Select
-            label="Category"
-            options={categories.slice(1)}
+            label="Category *"
+            options={categoryOptions}
             placeholder="Select category"
             value={form.category}
             onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
           />
           <Select
             label="Country"
-            options={[{ value: 'India', label: 'India' }, { value: 'USA', label: 'USA' }, { value: 'UK', label: 'UK' }, { value: 'Germany', label: 'Germany' }]}
+            options={[
+              { value: 'India', label: 'India' },
+              { value: 'USA', label: 'USA' },
+              { value: 'UK', label: 'UK' },
+              { value: 'Germany', label: 'Germany' },
+              { value: 'Singapore', label: 'Singapore' },
+            ]}
             placeholder="Select country"
             value={form.country}
             onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
           />
         </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Input label="City" placeholder="Mumbai" value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} />
+          <Input label="Contact Person" placeholder="Contact name" value={form.contactPerson} onChange={e => setForm(f => ({ ...f, contactPerson: e.target.value }))} />
+        </div>
+        <Input label="GST Number" placeholder="22AAAAA0000A1Z5" value={form.gstNumber} onChange={e => setForm(f => ({ ...f, gstNumber: e.target.value }))} />
         <div className="flex items-center justify-end gap-3 pt-2">
           <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-          <Button type="submit">Add Vendor</Button>
+          <Button type="submit" isLoading={loading}>{vendorToEdit ? "Save Changes" : "Add Vendor"}</Button>
         </div>
       </form>
     </Modal>
@@ -100,15 +152,15 @@ function VendorDetailModal({ vendor, isOpen, onClose }: { vendor: Vendor | null;
         </div>
 
         <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 rounded-xl">
-          <div><p className="text-xs text-muted-foreground">Total Orders</p><p className="text-lg font-bold text-foreground">{vendor.totalOrders}</p></div>
-          <div><p className="text-xs text-muted-foreground">Total Value</p><p className="text-lg font-bold text-foreground">{formatCurrency(vendor.totalValue)}</p></div>
+          <div><p className="text-xs text-muted-foreground">Total Orders</p><p className="text-lg font-bold text-foreground">{vendor.total_orders}</p></div>
+          <div><p className="text-xs text-muted-foreground">Total Value</p><p className="text-lg font-bold text-foreground">{formatCurrency(Number(vendor.total_value))}</p></div>
         </div>
 
         <div className="space-y-2">
           {[
             { icon: Mail, label: 'Email', value: vendor.email },
-            { icon: Phone, label: 'Phone', value: vendor.phone },
-            { icon: Globe, label: 'Country', value: vendor.country },
+            { icon: Phone, label: 'Phone', value: vendor.phone || '—' },
+            { icon: Globe, label: 'Country', value: vendor.country || '—' },
           ].map(({ icon: Icon, label, value }) => (
             <div key={label} className="flex items-center gap-3 text-sm">
               <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -118,9 +170,9 @@ function VendorDetailModal({ vendor, isOpen, onClose }: { vendor: Vendor | null;
           ))}
         </div>
 
-        <div className="flex gap-3 pt-2">
-          <Button variant="secondary" className="flex-1">Send RFQ</Button>
-          <Button className="flex-1" leftIcon={<Edit className="w-4 h-4" />}>Edit Vendor</Button>
+        <div className="grid grid-cols-2 gap-2 p-3 bg-muted/20 rounded-lg text-xs">
+          {vendor.gst_number && <div><span className="text-muted-foreground">GST:</span> <span className="text-foreground font-mono ml-1">{vendor.gst_number}</span></div>}
+          {vendor.vendor_code && <div><span className="text-muted-foreground">Code:</span> <span className="text-emerald-400 font-mono ml-1">{vendor.vendor_code}</span></div>}
         </div>
       </div>
     </Modal>
@@ -128,21 +180,79 @@ function VendorDetailModal({ vendor, isOpen, onClose }: { vendor: Vendor | null;
 }
 
 export default function VendorsPage() {
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [total, setTotal] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
+  const [vendorToEdit, setVendorToEdit] = useState<Vendor | null>(null);
+  const [categories, setCategories] = useState<{ value: string; label: string }[]>([{ value: '', label: 'All Categories' }]);
   const { toast } = useToast();
 
-  const filtered = mockVendors.filter(v => {
-    const matchSearch = v.name.toLowerCase().includes(search.toLowerCase()) ||
-      v.email.toLowerCase().includes(search.toLowerCase()) ||
-      v.category.toLowerCase().includes(search.toLowerCase());
-    const matchCat = !categoryFilter || v.category === categoryFilter;
-    const matchStatus = !statusFilter || v.status === statusFilter;
-    return matchSearch && matchCat && matchStatus;
-  });
+  const loadVendors = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res: any = await vendorService.getVendors({
+        search: search || undefined,
+        category: categoryFilter || undefined,
+        status: statusFilter || undefined,
+        limit: 50,
+      });
+      const data = res?.data ?? res;
+      setVendors(data?.vendors ?? []);
+      setTotal(data?.pagination?.total ?? 0);
+    } catch {
+      toast({ type: 'error', title: 'Error', description: 'Failed to load vendors.' });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [search, categoryFilter, statusFilter]);
+
+  useEffect(() => {
+    loadVendors();
+  }, [loadVendors]);
+
+  useEffect(() => {
+    vendorService.getVendorCategories().then((cats: any[]) => {
+      const opts = [{ value: '', label: 'All Categories' }, ...(cats ?? []).map((c: any) => ({ value: c.category, label: `${c.category} (${c.count})` }))];
+      setCategories(opts);
+    }).catch(() => {});
+  }, []);
+
+  const handleDelete = async (vendor: Vendor) => {
+    if (!window.confirm(`Are you sure you want to delete ${vendor.name}?`)) return;
+    try {
+      await vendorService.deleteVendor(vendor.id);
+      toast({ type: 'success', title: 'Vendor deleted', description: `${vendor.name} has been removed.` });
+      loadVendors();
+    } catch (err: any) {
+      toast({ type: 'error', title: 'Delete failed', description: err?.message ?? 'Could not delete vendor.' });
+    }
+  };
+
+  const handleStatusChange = async (vendor: Vendor, newStatus: string) => {
+    const label = newStatus === 'active' ? 'approve' : newStatus === 'suspended' ? 'suspend' : newStatus;
+    if (!window.confirm(`Are you sure you want to ${label} ${vendor.name}? An email will be sent to the vendor.`)) return;
+    try {
+      await vendorService.updateVendorStatus(vendor.id, newStatus);
+      toast({ type: 'success', title: `Vendor ${newStatus === 'active' ? 'Approved' : 'Status Updated'}`, description: `${vendor.name} is now ${newStatus}. Email notification sent.` });
+      loadVendors();
+    } catch (err: any) {
+      toast({ type: 'error', title: 'Status update failed', description: err?.message ?? 'Please try again.' });
+    }
+  };
+
+  const stats = {
+    total: vendors.length,
+    active: vendors.filter(v => v.status === 'active').length,
+    pending: vendors.filter(v => v.status === 'pending').length,
+    inactive: vendors.filter(v => v.status === 'inactive').length,
+  };
+
+  if (isLoading && vendors.length === 0) return <PageLoader />;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -160,10 +270,10 @@ export default function VendorsPage() {
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Total Vendors', value: mockVendors.length, color: 'text-foreground' },
-          { label: 'Active', value: mockVendors.filter(v => v.status === 'active').length, color: 'text-emerald-400' },
-          { label: 'Pending', value: mockVendors.filter(v => v.status === 'pending').length, color: 'text-yellow-400' },
-          { label: 'Inactive', value: mockVendors.filter(v => v.status === 'inactive').length, color: 'text-red-400' },
+          { label: 'Total Vendors', value: total || stats.total, color: 'text-foreground' },
+          { label: 'Active', value: stats.active, color: 'text-emerald-400' },
+          { label: 'Pending', value: stats.pending, color: 'text-yellow-400' },
+          { label: 'Inactive', value: stats.inactive, color: 'text-red-400' },
         ].map(stat => (
           <div key={stat.label} className="bg-card border border-border rounded-xl p-4">
             <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
@@ -214,7 +324,7 @@ export default function VendorsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {filtered.length === 0 ? (
+              {vendors.length === 0 ? (
                 <tr>
                   <td colSpan={8}>
                     <EmptyState
@@ -226,7 +336,7 @@ export default function VendorsPage() {
                   </td>
                 </tr>
               ) : (
-                filtered.map(vendor => (
+                vendors.map(vendor => (
                   <tr key={vendor.id} className="table-row-hover">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -235,7 +345,7 @@ export default function VendorsPage() {
                         </div>
                         <div>
                           <p className="font-medium text-foreground text-sm">{vendor.name}</p>
-                          <p className="text-xs text-muted-foreground">{vendor.id}</p>
+                          <p className="text-xs text-muted-foreground font-mono">{vendor.vendor_code}</p>
                         </div>
                       </div>
                     </td>
@@ -247,8 +357,8 @@ export default function VendorsPage() {
                       <p className="text-xs text-muted-foreground">{vendor.phone}</p>
                     </td>
                     <td className="px-4 py-3"><StarRating rating={vendor.rating} /></td>
-                    <td className="px-4 py-3 text-center font-medium">{vendor.totalOrders}</td>
-                    <td className="px-4 py-3 font-medium">{formatCurrency(vendor.totalValue)}</td>
+                    <td className="px-4 py-3 text-center font-medium">{vendor.total_orders}</td>
+                    <td className="px-4 py-3 font-medium">{formatCurrency(Number(vendor.total_value))}</td>
                     <td className="px-4 py-3">
                       <Badge variant={getStatusVariant(vendor.status)} className="capitalize">{vendor.status}</Badge>
                     </td>
@@ -262,13 +372,32 @@ export default function VendorsPage() {
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         <button
+                          onClick={() => setVendorToEdit(vendor)}
                           className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                           title="Edit"
                         >
                           <Edit className="w-3.5 h-3.5" />
                         </button>
+                        {vendor.status !== 'active' && (
+                          <button
+                            onClick={() => handleStatusChange(vendor, 'active')}
+                            className="p-1.5 rounded-md hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-400 transition-colors"
+                            title="Approve (sends email)"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {vendor.status !== 'suspended' && (
+                          <button
+                            onClick={() => handleStatusChange(vendor, 'suspended')}
+                            className="p-1.5 rounded-md hover:bg-orange-500/10 text-muted-foreground hover:text-orange-400 transition-colors"
+                            title="Suspend (sends email)"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
-                          onClick={() => toast({ type: 'info', title: 'Coming soon', description: 'Delete functionality in progress.' })}
+                          onClick={() => handleDelete(vendor)}
                           className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
                           title="Delete"
                         >
@@ -283,19 +412,19 @@ export default function VendorsPage() {
           </table>
         </div>
 
-        {filtered.length > 0 && (
+        {vendors.length > 0 && (
           <div className="px-4 py-3 border-t border-border flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Showing {filtered.length} of {mockVendors.length} vendors</p>
-            <div className="flex items-center gap-1">
-              {['1', '2', '3'].map(p => (
-                <button key={p} className={`w-7 h-7 text-xs rounded-md transition-colors ${p === '1' ? 'bg-emerald-500 text-white' : 'hover:bg-muted text-muted-foreground'}`}>{p}</button>
-              ))}
-            </div>
+            <p className="text-xs text-muted-foreground">Showing {vendors.length} of {total || vendors.length} vendors</p>
           </div>
         )}
       </Card>
 
-      <AddVendorModal isOpen={showAdd} onClose={() => setShowAdd(false)} />
+      <VendorFormModal 
+        isOpen={showAdd || !!vendorToEdit} 
+        onClose={() => { setShowAdd(false); setVendorToEdit(null); }} 
+        onSaved={loadVendors} 
+        vendorToEdit={vendorToEdit} 
+      />
       <VendorDetailModal vendor={selectedVendor} isOpen={!!selectedVendor} onClose={() => setSelectedVendor(null)} />
     </div>
   );

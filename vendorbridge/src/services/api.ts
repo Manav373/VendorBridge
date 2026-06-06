@@ -2,14 +2,40 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 5000,
+  timeout: 15000,
 });
 
-// Mock API interceptor - returns mock data instead of real HTTP calls
-api.interceptors.request.use(config => {
-  config.headers['X-Mock'] = 'true';
-  return config;
-});
+// Request interceptor to attach JWT token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('vb_token');
+    if (token && config.headers) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor to handle errors globally (e.g. 401 unauthorized)
+api.interceptors.response.use(
+  (response) => {
+    return response.data; // Return the response envelope data directly (success, message, data)
+  },
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      // Clear storage and redirect to login if unauthorized
+      localStorage.removeItem('vb_token');
+      localStorage.removeItem('vb_user');
+      if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error.response?.data || error);
+  }
+);
 
 export default api;
 

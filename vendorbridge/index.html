@@ -13,6 +13,19 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Suppress Permissions-Policy 'unload' violations from html2pdf.js/html2canvas.
+         Must be a plain <script> (NOT type=module) - runs before any ES modules load.
+         By the time type=module scripts run, html2pdf.js has already tried to register
+         its unload listener, making a main.tsx patch too late. -->
+    <script>
+      (function () {
+        var _orig = window.addEventListener.bind(window);
+        window.addEventListener = function (type) {
+          if (type === 'unload' || type === 'beforeunload') return;
+          return _orig.apply(this, arguments);
+        };
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
