@@ -382,15 +382,6 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 ---
 
-## 👨‍💻 Authors
-
-Built with ❤️ during a hackathon in 8 hours.
-
-| Name | Role |
-|------|------|
-| **Manav** | Full-Stack Developer |
-
----
 
 <div align="center">
 
